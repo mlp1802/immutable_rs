@@ -6,6 +6,8 @@ use syn::{parse_macro_input, Data, DeriveInput, Fields, GenericArgument, PathArg
 pub fn derive_immutable_update(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let struct_name = &input.ident;
+    let generics = &input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let methods = if let Data::Struct(data) = &input.data {
         if let Fields::Named(fields) = &data.fields {
@@ -49,6 +51,29 @@ pub fn derive_immutable_update(input: TokenStream) -> TokenStream {
                                 }
                             }
                         }
+                    } else if let Some(inner_type) = extract_arc_inner_type(field_type) {
+                        // Check if field is Arc<T>
+                        if is_string_type(&inner_type) {
+                            // For Arc<String>, accept impl Into<String>
+                            quote! {
+                                pub fn #setter_name(&self, value: impl Into<String>) -> Self {
+                                    Self {
+                                        #field_name: std::sync::Arc::new(value.into()),
+                                        ..self.clone()
+                                    }
+                                }
+                            }
+                        } else {
+                            // For other Arc<T>, accept T
+                            quote! {
+                                pub fn #setter_name(&self, value: #inner_type) -> Self {
+                                    Self {
+                                        #field_name: std::sync::Arc::new(value),
+                                        ..self.clone()
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         // For non-Rc fields, accept the type directly
                         quote! {
@@ -72,7 +97,15 @@ pub fn derive_immutable_update(input: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        impl #struct_name {
+        impl #impl_generics #struct_name #ty_generics #where_clause {
+            pub fn to_rc(self) -> std::rc::Rc<Self> {
+                std::rc::Rc::new(self)
+            }
+
+            pub fn to_arc(self) -> std::sync::Arc<Self> {
+                std::sync::Arc::new(self)
+            }
+
             #(#methods)*
         }
     };
@@ -82,9 +115,17 @@ pub fn derive_immutable_update(input: TokenStream) -> TokenStream {
 
 // Helper functions
 fn extract_rc_inner_type(ty: &Type) -> Option<&Type> {
+    extract_smart_pointer_inner_type(ty, "Rc")
+}
+
+fn extract_arc_inner_type(ty: &Type) -> Option<&Type> {
+    extract_smart_pointer_inner_type(ty, "Arc")
+}
+
+fn extract_smart_pointer_inner_type<'a>(ty: &'a Type, wrapper: &str) -> Option<&'a Type> {
     if let Type::Path(type_path) = ty {
         if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == "Rc" {
+            if segment.ident == wrapper {
                 if let PathArguments::AngleBracketed(args) = &segment.arguments {
                     if let Some(GenericArgument::Type(inner_type)) = args.args.first() {
                         return Some(inner_type);
