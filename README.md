@@ -6,6 +6,7 @@ With `#[derive(ImmutableUpdate)]` on a named-field struct, the macro generates:
 
 - Getter methods for each field, using the field name directly
 - `with_<field>` methods that return an updated cloned value
+- `update_<field>` methods that apply a closure and return an updated cloned value
 - `to_rc(self) -> Rc<Self>`
 - `to_arc(self) -> Arc<Self>`
 
@@ -46,10 +47,7 @@ fn main() {
         ..state
     };
 
-    let state = AppState {
-        profile: state.profile().with_name("Updated").to_rc(),
-        ..state
-    };
+    let state = state.update_profile(|profile| profile.with_name("Updated"));
 
     let _shared = state.to_arc();
 }
