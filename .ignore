@@ -1,0 +1,15 @@
+target
+.cargo
+training_states
+~/.cargo
+main/assets
+SINGLEPLAYER_GAMES
+deploy
+xwin
+SAVED_FIGHTS
+deploy.zip
+Cargo.lock
+*.png
+*.glb
+*.gltf
+*.bin
